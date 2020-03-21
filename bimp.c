@@ -281,6 +281,8 @@ static void set_enomem(void)
 #endif /* defined(BIMP_SET_ERRNO) || defined(__unix__) */
 
 #if defined(__linux__)
+
+#	include <stdlib.h>
 #	include <sys/syscall.h>
 #	include <unistd.h>
 
@@ -353,6 +355,14 @@ static void init_heap(void)
 	int errnum = errno;
 	start = (void *)syscall(SYS_brk, NULL);
 	end = (void *)syscall(SYS_brk, start + 1024);
+	if (end == start) {
+		/* This error could be handled by returning NULL, but this is
+		 * easier, and the error seems unlikely. */
+		static const char msg[] = "Not enough initial heap space.\n";
+		ssize_t w = write(STDERR_FILENO, msg, sizeof(msg) - 1);
+		abort();
+		end += w; /* Silence unused warning. */
+	}
 	errno = errnum;
 }
 

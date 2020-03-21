@@ -415,11 +415,17 @@ static void init_heap(void)
 static int request_more(char *new_end)
 {
 	int errnum;
+	char *optimistic_end;
 	if (new_end <= end) return 0;
-	new_end += (new_end - start) / 2;
+	optimistic_end = new_end + (new_end - start) / 2;
 	errnum = errno;
-	if (LIKELY(set_brk(new_end) == new_end)) {
+	if (LIKELY(set_brk(optimistic_end) == optimistic_end)) {
+		/* Try allocating extra to decrease system call frequency. */
 		end = new_end;
+		return 0;
+	} else if (LIKELY(set_brk(new_end) == new_end)) {
+		/* Try allocating only as much as what was asked. */
+		errno = errnum;
 		return 0;
 	} else {
 		errno = errnum;

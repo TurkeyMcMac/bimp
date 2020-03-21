@@ -82,8 +82,9 @@ static void free_no_lock_nonnull(void *mem)
 {
 	if (mem == top_mem) {
 		top_mem -= FREED_BACK(GET_HEADER(top_mem)->back);
+		if (IS_FREED(top_mem)) top_mem -= GET_HEADER(top_mem)->back;
 		/* Loop in case back was too large to store in one size_t: */
-		while (IS_FREED(top_mem)) {
+		while (UNLIKELY(IS_FREED(top_mem))) {
 			top_mem -= GET_HEADER(top_mem)->back;
 		}
 	} else {
@@ -93,7 +94,8 @@ static void free_no_lock_nonnull(void *mem)
 			size_t already_freed = GET_HEADER(back_mem)->back;
 			size_t total_freed = freed_back + already_freed;
 			/* The if protects against overflow: */
-			if (total_freed >= freed_back) freed_back = total_freed;
+			if (LIKELY(total_freed >= freed_back))
+				freed_back = total_freed;
 		}
 		GET_HEADER(mem)->back = freed_back;
 	}

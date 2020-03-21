@@ -168,13 +168,13 @@ static void set_enomem(void)
 #endif /* defined(BIMP_SET_ERRNO) || defined(__unix__) */
 
 #if defined(__linux__)
-
-#	include <linux/futex.h>
-#	include <stdint.h>
 #	include <sys/syscall.h>
 #	include <unistd.h>
 
 #	if !defined(BIMP_SINGLE_THREADED)
+
+#		include <linux/futex.h>
+#		include <stdint.h>
 
 /* lock and unlock based on https://akkadia.org/drepper/futex.pdf page 8. */
 

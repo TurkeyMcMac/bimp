@@ -178,29 +178,29 @@ static void set_enomem(void)
 
 /* lock and unlock based on https://akkadia.org/drepper/futex.pdf page 8. */
 
-static uint32_t cmpxchg(uint32_t *val, uint32_t expected, uint32_t desired)
+static uint32_t cmpxchg(volatile uint32_t *val, uint32_t expected, uint32_t desired)
 {
 	__atomic_compare_exchange_n(val, &expected, desired, 0,
 		__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 	return expected;
 }
 
-static uint32_t xchg(uint32_t *val, uint32_t put)
+static uint32_t xchg(volatile uint32_t *val, uint32_t put)
 {
 	return __atomic_exchange_n(val, put, __ATOMIC_SEQ_CST);
 }
 
-static uint32_t fetch_sub(uint32_t *val, uint32_t sub)
+static uint32_t fetch_sub(volatile uint32_t *val, uint32_t sub)
 {
 	return __atomic_fetch_sub(val, sub, __ATOMIC_SEQ_CST);
 }
 
-static void store(uint32_t *val, uint32_t put)
+static void store(volatile uint32_t *val, uint32_t put)
 {
 	__atomic_store_n(val, put, __ATOMIC_SEQ_CST);
 }
 
-static uint32_t futex = 0;
+static volatile uint32_t futex = 0;
 
 static void lock(void)
 {

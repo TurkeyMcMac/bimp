@@ -282,7 +282,6 @@ static void set_enomem(void)
 
 #if defined(__linux__)
 
-#	include <stdlib.h>
 #	include <sys/syscall.h>
 #	include <unistd.h>
 
@@ -350,6 +349,7 @@ static int needs_init(void)
 	return UNLIKELY(!start);
 }
 
+void abort(void);
 static void init_heap(void)
 {
 	int errnum = errno;

@@ -3,10 +3,11 @@
 
 /** PROTOTYPES FOR PLATFORM-SPECIFIC STUFF **/
 
-static char *start, *end, *top_mem;
+static char *start, *end;
 static void lock(void);
 static void unlock(void);
-static void init_once(void);
+static int needs_init(void);
+static void init_heap(void);
 static int request_more(char *new_end);
 static void set_enomem(void);
 
@@ -22,6 +23,8 @@ static void set_enomem(void);
 #define LIKELY(cond) EXPECT((cond) != 0, 1)
 #define UNLIKELY(cond) EXPECT((cond) != 0, 0)
 
+#define IS_POW_2(x) ((x) != 0 && ((x) & ((x) - 1)) == 0)
+
 #if !defined(BIMP_ALIGN)
 #	define BIMP_ALIGN 16
 #endif
@@ -34,21 +37,33 @@ union header {
 };
 #define ALIGN sizeof(union header)
 ASSERT(alignment_works, ALIGN % BIMP_ALIGN == 0);
-#define ROUND_SIZE(size) (((size) + ALIGN - 1) / ALIGN * ALIGN)
+#define ROUND_SIZE(size, align) (((size) + align - 1) / align * align)
 #define GET_HEADER(mem) \
 	((struct header_s *)((char *)(mem) - sizeof(union header)))
-#define IS_FREED(mem) ((char *)(mem) > start && !(GET_HEADER(mem)->back & 1))
+#define IS_FREED(mem) ((GET_HEADER(mem)->back & 1) == 0)
 #define IN_USE_BACK(back) ((back) | 1)
 #define FREED_BACK(back) ((back) & ~1)
 
+static char *top_mem;
+
+static void init_once(void)
+{
+	if (UNLIKELY(needs_init())) {
+		init_heap();
+		top_mem = start + sizeof(union header);
+		GET_HEADER(top_mem)->back = IN_USE_BACK(0);
+		GET_HEADER(top_mem)->size = 0;
+	}
+}
+
 static void *malloc_no_lock(size_t size)
 {
-	size_t back = sizeof(union header);
+	size_t back;
 	char *new_top;
-	if (top_mem > start)
-		back += GET_HEADER(top_mem)->size;
+	init_once();
+	back = sizeof(union header) + GET_HEADER(top_mem)->size;
 	new_top = top_mem + back;
-	size = ROUND_SIZE(size);
+	size = ROUND_SIZE(size, ALIGN);
 	if (UNLIKELY(request_more(new_top + size))) {
 		set_enomem();
 		return NULL;
@@ -80,13 +95,30 @@ static void free_no_lock_nonnull(void *mem)
 	}
 }
 
+void *malloc(size_t size);
+static void *malloc_aligned(size_t align, size_t size)
+{
+	size_t old_top_size;
+	void *mem;
+	if (align <= ALIGN) return malloc(size);
+	lock();
+	init_once();
+	old_top_size = GET_HEADER(top_mem)->size;
+	mem = top_mem + old_top_size;
+	mem += align - (size_t)(mem + sizeof(union header)) & (align - 1);
+	GET_HEADER(top_mem)->size = (char *)mem - top_mem;
+	mem = malloc_no_lock(size);
+	if (UNLIKELY(!mem)) GET_HEADER(top_mem)->size = old_top_size;
+	unlock();
+	return mem;
+}
+
 /** PORTABLE INTERFACE **/
 
 void *malloc(size_t size)
 {
 	void *mem;
 	lock();
-	init_once();
 	mem = malloc_no_lock(size);
 	unlock();
 	return mem;
@@ -110,12 +142,11 @@ void *realloc(void *mem, size_t size)
 	size_t *old_size;
 	if (!mem) return malloc(size);
 	lock();
-	init_once();
 	old_size = &GET_HEADER(mem)->size;
 	if (size <= *old_size) {
-		*old_size = ROUND_SIZE(size);
+		*old_size = ROUND_SIZE(size, ALIGN);
 	} else if (mem == top_mem) {
-		size = ROUND_SIZE(size);
+		size = ROUND_SIZE(size, ALIGN);
 		if (UNLIKELY(request_more(top_mem + size))) {
 			set_enomem();
 			mem = NULL;
@@ -141,6 +172,80 @@ void free(void *mem)
 	free_no_lock_nonnull(mem);
 	unlock();
 }
+
+void *aligned_alloc(size_t align, size_t size)
+{
+	return malloc_aligned(align, size);
+}
+
+size_t malloc_usable_size(void *mem)
+{
+	size_t size;
+	if (!mem) return 0;
+	lock();
+	size = GET_HEADER(mem)->size;
+	unlock();
+	return size;
+}
+
+void *memalign(size_t align, size_t size)
+{
+	return malloc_aligned(align, size);
+}
+
+void *reallocarray(void *mem, size_t nmemb, size_t size)
+{
+	size_t total = nmemb * size;
+	if (nmemb > 1 && UNLIKELY(total / nmemb != size)) {
+		set_enomem();
+		return NULL;
+	}
+	return realloc(mem, total);
+}
+
+void *reallocf(void *mem, size_t size)
+{
+	void *new_mem = realloc(mem, size);
+	if (!new_mem) free(mem);
+	return new_mem;
+}
+
+#if defined(__unix__)
+
+/* posix_memalign, valloc, and pvalloc are Unix-only because posix_memalign
+ * requires errno for its return values and valloc and pvalloc require sysconf
+ * to find the page size. */
+
+#	include <errno.h>
+#	include <unistd.h>
+
+int posix_memalign(void **memptr, size_t align, size_t size)
+{
+	int errnum;
+	void *mem;
+	if (align % sizeof(void *) != 0 || !IS_POW_2(align)) return EINVAL;
+	errnum = errno;
+	mem = malloc_aligned(align, size);
+	if (UNLIKELY(!mem)) {
+		errno = errnum;
+		return ENOMEM;
+	}
+	*memptr = mem;
+	return 0;
+}
+
+void *valloc(size_t size)
+{
+	return malloc_aligned(sysconf(_SC_PAGESIZE), size);
+}
+
+void *pvalloc(size_t size)
+{
+	long pagesize = sysconf(_SC_PAGESIZE);
+	return malloc_aligned(pagesize, ROUND_SIZE(size, pagesize));
+}
+
+#endif /* defined(__unix__) */
 
 /** ARCHITECTURE-SPECIFIC IMPLEMENTATION **/
 
@@ -230,14 +335,17 @@ static void unlock(void)
 
 #	endif /* !defined(BIMP_SINGLE_THREADED) */
 
-static void init_once(void)
+static int needs_init(void)
 {
-	if (UNLIKELY(!start)) {
-		int errnum = errno;
-		top_mem = start = (void *)syscall(SYS_brk, NULL);
-		end = (void *)syscall(SYS_brk, start + 1024);
-		errno = errnum;
-	}
+	return UNLIKELY(!start);
+}
+
+static void init_heap(void)
+{
+	int errnum = errno;
+	start = (void *)syscall(SYS_brk, NULL);
+	end = (void *)syscall(SYS_brk, start + 1024);
+	errno = errnum;
 }
 
 static int request_more(char *new_end)

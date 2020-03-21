@@ -299,7 +299,7 @@ static void *set_brk(void *new_end)
 #		include <linux/futex.h>
 #		include <stdint.h>
 
-/* lock and unlock based on https://akkadia.org/drepper/futex.pdf page 8. */
+#if defined(__GNUC__)
 
 static uint32_t cmpxchg(volatile uint32_t *val, uint32_t expected, uint32_t desired)
 {
@@ -322,6 +322,36 @@ static void store(volatile uint32_t *val, uint32_t put)
 {
 	__atomic_store_n(val, put, __ATOMIC_SEQ_CST);
 }
+
+/* endif defined(__GNUC__) */
+#else /* Use C11 atomics */
+
+#	include <stdatomic.h>
+
+static uint32_t cmpxchg(volatile uint32_t *val, uint32_t expected, uint32_t desired)
+{
+	atomic_compare_exchange_strong(val, &expected, desired);
+	return expected;
+}
+
+static uint32_t xchg(volatile uint32_t *val, uint32_t put)
+{
+	return atomic_exchange(val, put);
+}
+
+static uint32_t fetch_sub(volatile uint32_t *val, uint32_t sub)
+{
+	return atomic_fetch_sub(val, sub);
+}
+
+static void store(volatile uint32_t *val, uint32_t put)
+{
+	atomic_store(val, put);
+}
+
+#endif /* Use C11 atomics */
+
+/* lock and unlock based on https://akkadia.org/drepper/futex.pdf page 8. */
 
 static volatile uint32_t futex = 0;
 

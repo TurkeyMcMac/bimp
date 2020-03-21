@@ -15,6 +15,10 @@ static void set_enomem(void);
 
 #define ASSERT(name, cond) typedef int assert_##name[((cond) != 0) * 2 - 1]
 
+#if defined(__APPLE__)
+#	define __unix__
+#endif
+
 #if defined(__GNUC__)
 #	define EXPECT(cond, expect) __builtin_expect(cond, expect)
 #else
@@ -285,6 +289,11 @@ static void set_enomem(void)
 #	include <sys/syscall.h>
 #	include <unistd.h>
 
+static void *set_brk(void *new_end)
+{
+	return (void *)syscall(SYS_brk, new_end);
+}
+
 #	if !defined(BIMP_SINGLE_THREADED)
 
 #		include <linux/futex.h>
@@ -344,6 +353,43 @@ static void unlock(void)
 
 #	endif /* !defined(BIMP_SINGLE_THREADED) */
 
+/* endif defined(__linux__) */
+#elif defined(__APPLE__)
+
+#	include <unistd.h>
+
+#	if !defined(BIMP_SINGLE_THREADED)
+
+#		include <os/lock.h>
+
+/* Hopefully the implementation doesn't allocate! */
+
+static os_unfair_lock_t os_lock = &OS_UNFAIR_LOCK_INIT;
+
+static void lock(void)
+{
+	os_unfair_lock_lock(os_lock);
+}
+
+static void unlock(void)
+{
+	os_unfair_lock_unlock(os_lock);
+}
+
+#	endif /* !defined(BIMP_SINGLE_THREADED) */
+
+static void *set_brk(void *new_end)
+{
+	if (brk(new_end) == (void *)-1) {
+		return sbrk(0);
+	}
+	return new_end;
+}
+
+#endif /* defined(__APPLE__) */
+
+#if defined(__linux__) || defined(__APPLE__)
+
 static int needs_init(void)
 {
 	return UNLIKELY(!start);
@@ -353,8 +399,8 @@ void abort(void);
 static void init_heap(void)
 {
 	int errnum = errno;
-	start = (void *)syscall(SYS_brk, NULL);
-	end = (void *)syscall(SYS_brk, start + 1024);
+	start = set_brk(NULL);
+	end = set_brk(start + 1024);
 	if (end == start) {
 		/* This error could be handled by returning NULL, but this is
 		 * easier, and the error seems unlikely. */
@@ -368,12 +414,11 @@ static void init_heap(void)
 
 static int request_more(char *new_end)
 {
-	ptrdiff_t size;
 	int errnum;
 	if (new_end <= end) return 0;
 	new_end += (new_end - start) / 2;
 	errnum = errno;
-	if (LIKELY((char *)syscall(SYS_brk, new_end) == new_end)) {
+	if (LIKELY(set_brk(new_end) == new_end)) {
 		end = new_end;
 		return 0;
 	} else {
@@ -382,7 +427,7 @@ static int request_more(char *new_end)
 	}
 }
 
-/* endif defined(__linux__) */
+/* endif defined(__linux__) || defined(__APPLE__) */
 #else
 #	error Unsupported platform.
 #endif

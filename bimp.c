@@ -99,15 +99,23 @@ void *malloc(size_t size);
 static void *malloc_aligned(size_t align, size_t size)
 {
 	size_t old_top_size;
+	size_t align_offset;
 	void *mem;
 	if (align <= ALIGN) return malloc(size);
 	lock();
 	init_once();
 	old_top_size = GET_HEADER(top_mem)->size;
 	mem = top_mem + old_top_size;
-	mem += align - (size_t)(mem + sizeof(union header)) & (align - 1);
+	align_offset = (size_t)(mem + sizeof(union header)) & (align - 1);
+	if (align_offset != 0) mem += align - align_offset;
 	GET_HEADER(top_mem)->size = (char *)mem - top_mem;
-	mem = malloc_no_lock(size);
+	if (LIKELY(GET_HEADER(top_mem)->size >= old_top_size)) {
+		mem = malloc_no_lock(size);
+	} else {
+		/* Just in case the size shrinks due to overflow somewhere. */
+		mem = NULL;
+		set_enomem();
+	}
 	if (UNLIKELY(!mem)) GET_HEADER(top_mem)->size = old_top_size;
 	unlock();
 	return mem;

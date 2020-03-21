@@ -256,7 +256,6 @@ static int request_more(char *new_end)
 	}
 }
 
-
 /* endif defined(__linux__) */
 #else
 #	error Unsupported platform.

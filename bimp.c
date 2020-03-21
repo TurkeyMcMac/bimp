@@ -214,7 +214,7 @@ void *reallocarray(void *mem, size_t nmemb, size_t size)
 void *reallocf(void *mem, size_t size)
 {
 	void *new_mem = realloc(mem, size);
-	if (!new_mem) free(mem);
+	if (UNLIKELY(!new_mem)) free(mem);
 	return new_mem;
 }
 

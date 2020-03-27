@@ -284,7 +284,14 @@ static void set_enomem(void)
 	errno = ENOMEM;
 }
 
-#endif /* defined(BIMP_SET_ERRNO) || defined(__unix__) */
+/* endif defined(BIMP_SET_ERRNO) || defined(__unix__) */
+#else
+
+static void set_enomem(void)
+{
+}
+
+#endif /* !defined(BIMP_SET_ERRNO) && !defined(__unix__) */
 
 #if defined(__linux__)
 

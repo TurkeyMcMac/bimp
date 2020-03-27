@@ -41,6 +41,8 @@ union header {
 };
 #define ALIGN sizeof(union header)
 ASSERT(alignment_works, ALIGN % BIMP_ALIGN == 0);
+ASSERT(alignment_is_power_of_2, IS_POW_2(ALIGN));
+ASSERT(alignment_is_even, (ALIGN & 1) == 0); /* So IN_USE_BACK works. */
 #define ROUND_SIZE(size, align) (((size) + align - 1) / align * align)
 #define GET_HEADER(mem) \
 	((struct header_s *)((char *)(mem) - sizeof(union header)))

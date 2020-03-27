@@ -47,6 +47,21 @@ Mac:
 DYLD_INSERT_LIBRARIES=./libbimp.dylib my-program
 ```
 
+### Compilation Options
+
+Some symbols can be defined to affect compilation. They are as follows:
+
+* `BIMP_ALIGN`: The numeric alignment of allocations. It must be a power of two.
+* `BIMP_SET_ERRNO`: Force errno to be set. It will always be set on Unix.
+* `BIMP_SINGLE_THREADED`: Assume usage by a single thread. This removes the
+  overhead of locking.
+
+Define them like so:
+
+```
+make CFLAGS='-DBIMP_ALIGN=32 -DBIMP_SET_ERRNO ...'
+```
+
 ## Implemented functions
 
 The following are implemented in `bimp.c`:

@@ -2,7 +2,8 @@ target-linux = libbimp.so
 target-apple = libbimp.dylib
 
 c-flags = -O3 -flto -shared -fPIC -fno-builtin-malloc -fno-builtin-calloc \
-	-fno-builtin-realloc -fno-builtin-free -Wall -Wextra $(CFLAGS)
+	-fno-builtin-realloc -fno-builtin-free -fno-builtin-memset \
+	-Wall -Wextra $(CFLAGS)
 
 ifeq ($(shell uname -s), Linux)
 all: $(target-linux)
